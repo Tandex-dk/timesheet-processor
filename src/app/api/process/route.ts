@@ -1,161 +1,214 @@
 import { NextRequest, NextResponse } from 'next/server';
-import * as XLSX from 'xlsx';
-import ExcelJS from 'exceljs';
+import { auth, currentUser } from '@clerk/nextjs/server';
+import {
+  aggregateRows,
+  buildWorkbook,
+  generateOutputFilename,
+  parseWorkbook,
+} from '@/server/timesheet-processing';
+import { ensureDatabaseSchema, getAllowedRoleForUser } from '@/server/db';
+import { getEnv } from '@/server/env';
+import { logProcessingRun } from '@/server/run-logger';
+import { checkRateLimit, createRequestId } from '@/server/security';
+
+export const runtime = 'nodejs';
 
 export async function POST(request: NextRequest) {
+  const env = getEnv();
+  const requestId = createRequestId();
+  const startedAt = Date.now();
+  const { userId, sessionClaims } = auth();
+  const user = userId ? await currentUser() : null;
+  const actorEmail = user?.emailAddresses[0]?.emailAddress ?? null;
+
+  const fail = async (
+    status: number,
+    payload: Record<string, unknown>,
+    logStatus: 'validation_error' | 'rate_limited' | 'unauthorized' | 'error',
+    errorCode?: string,
+    inputFilename = 'unknown.xlsx'
+  ) => {
+    if (userId) {
+      await logProcessingRun({
+        requestId,
+        actorUserId: userId,
+        actorEmail,
+        inputFilename,
+        rowCount: 0,
+        employeeCount: 0,
+        status: logStatus,
+        errorCode,
+      });
+    }
+    return NextResponse.json(payload, {
+      status,
+      headers: { 'x-request-id': requestId },
+    });
+  };
+
   try {
+    if (!userId) {
+      return await fail(
+        401,
+        { error: 'Authentication required', code: 'unauthenticated' },
+        'unauthorized',
+        'unauthenticated'
+      );
+    }
+
+    await ensureDatabaseSchema();
+    const dbRole = await getAllowedRoleForUser(userId);
+    const claimRole = (sessionClaims?.publicMetadata as { role?: string } | undefined)?.role;
+    const effectiveRole = dbRole || (claimRole === 'admin' || claimRole === 'operator' ? claimRole : null);
+
+    if (!effectiveRole) {
+      return await fail(
+        403,
+        { error: 'User is not authorized for payroll processing', code: 'forbidden' },
+        'unauthorized',
+        'forbidden'
+      );
+    }
+
+    const rateKey = `${userId}:${request.nextUrl.pathname}`;
+    const rate = checkRateLimit(
+      rateKey,
+      env.PROCESS_RATE_LIMIT_COUNT,
+      env.PROCESS_RATE_LIMIT_WINDOW_MS
+    );
+    if (!rate.allowed) {
+      return await fail(
+        429,
+        { error: 'Rate limit exceeded', code: 'rate_limited' },
+        'rate_limited',
+        'rate_limited'
+      );
+    }
+
+    const contentType = request.headers.get('content-type') || '';
+    if (!contentType.includes('multipart/form-data')) {
+      return await fail(
+        415,
+        { error: 'Unsupported content type', code: 'unsupported_media_type' },
+        'validation_error',
+        'unsupported_media_type'
+      );
+    }
+
+    const contentLength = Number(request.headers.get('content-length') || 0);
+    if (contentLength > env.MAX_UPLOAD_MB * 1024 * 1024) {
+      return await fail(
+        413,
+        { error: `File too large. Maximum is ${env.MAX_UPLOAD_MB}MB.`, code: 'payload_too_large' },
+        'validation_error',
+        'payload_too_large'
+      );
+    }
+
     const formData = await request.formData();
     const file = formData.get('file') as File;
     
     if (!file) {
-      return NextResponse.json({ error: 'No file provided' }, { status: 400 });
+      return await fail(
+        400,
+        { error: 'No file provided', code: 'missing_file' },
+        'validation_error',
+        'missing_file'
+      );
     }
 
-    // Convert File to Buffer
+    if (!file.name.toLowerCase().endsWith('.xlsx')) {
+      return await fail(
+        400,
+        { error: 'Only .xlsx files are accepted', code: 'invalid_file_type' },
+        'validation_error',
+        'invalid_file_type',
+        file.name
+      );
+    }
+
+    if (file.size > env.MAX_UPLOAD_MB * 1024 * 1024) {
+      return await fail(
+        413,
+        { error: `File too large. Maximum is ${env.MAX_UPLOAD_MB}MB.`, code: 'payload_too_large' },
+        'validation_error',
+        'payload_too_large',
+        file.name
+      );
+    }
+
     const buffer = Buffer.from(await file.arrayBuffer());
-    
-    // Read the Excel file
-    const workbook = XLSX.read(buffer);
-    const worksheet = workbook.Sheets[workbook.SheetNames[0]];
-    let timesheet = XLSX.utils.sheet_to_json(worksheet);
+    if (Date.now() - startedAt > env.PROCESS_TIMEOUT_MS) {
+      return await fail(
+        408,
+        { error: 'Processing timed out before parsing', code: 'timeout' },
+        'error',
+        'timeout',
+        file.name
+      );
+    }
 
-    // Process the data
-    const processedData = processTimesheet(timesheet);
+    const normalizedRows = parseWorkbook(buffer);
+    const { summary, audit } = aggregateRows(normalizedRows);
+    const outputFilename = generateOutputFilename(file.name);
 
-    // Create a new workbook with formatting
-    const newWorkbook = new ExcelJS.Workbook();
-    const newWorksheet = newWorkbook.addWorksheet('Processed Timesheet');
+    if (Date.now() - startedAt > env.PROCESS_TIMEOUT_MS) {
+      return await fail(
+        408,
+        { error: 'Processing timed out during aggregation', code: 'timeout' },
+        'error',
+        'timeout',
+        file.name
+      );
+    }
 
-    // Add headers
-    newWorksheet.columns = [
-      { header: 'Fornavn', key: 'firstName', width: 15 },
-      { header: 'Efternavn', key: 'lastName', width: 15 },
-      { header: 'Arbejds Timer', key: 'totalHours', width: 15 },
-      { header: 'Sygdom Timer', key: 'sickHours', width: 15 },
-      { header: 'Ferie Timer', key: 'vacationHours', width: 15 },
-      { header: 'Feriefridage Timer', key: 'vacationDaysHours', width: 15 },
-      { header: 'Tilføjede timer (Pause)', key: 'adjustedAdditionalHours', width: 15 },
-      { header: 'Total Justerede Timer', key: 'finalAdjustedTotalHours', width: 15 }
-    ];
-
-    // Add data
-    processedData.forEach(row => {
-      const newRow = newWorksheet.addRow({
-        firstName: row['Fornavn'],
-        lastName: row['Efternavn'],
-        totalHours: row['Arbejds Timer'],
-        sickHours: row['Sygdom Timer'],
-        vacationHours: row['Ferie Timer'],
-        vacationDaysHours: row['Feriefridage Timer'],
-        adjustedAdditionalHours: row['Tilføjede timer (Pause)'],
-        finalAdjustedTotalHours: row['Total Justerede Timer']
-      });
-
-      // Apply green fill to Final Adjusted Total Hours column
-      const finalAdjustedTotalHoursCell = newRow.getCell(8); // Column index (1-based)
-      finalAdjustedTotalHoursCell.fill = {
-        type: 'pattern',
-        pattern: 'solid',
-        fgColor: { argb: 'FF00FF00' }
-      };
+    const workbookBuffer = await buildWorkbook({
+      summary,
+      audit,
+      sourceFilename: file.name,
     });
 
-    // Generate buffer
-    const newBuffer = await newWorkbook.xlsx.writeBuffer();
+    await logProcessingRun({
+      requestId,
+      actorUserId: userId,
+      actorEmail,
+      inputFilename: file.name,
+      rowCount: normalizedRows.length,
+      employeeCount: summary.length,
+      status: 'success',
+    });
 
-    return new NextResponse(newBuffer, {
+    return new NextResponse(workbookBuffer, {
       headers: {
         'Content-Type': 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
-        'Content-Disposition': 'attachment; filename=processed_timesheet.xlsx'
+        'Content-Disposition': `attachment; filename="${outputFilename}"`,
+        'Cache-Control': 'no-store, max-age=0',
+        'x-request-id': requestId,
       }
     });
   } catch (error) {
-    console.error('Error processing file:', error);
-    return NextResponse.json(
-      { error: 'Error processing file' },
-      { status: 500 }
+    console.error('Error processing file:', { requestId, error });
+    if (error instanceof Error && error.name === 'ValidationError') {
+      return await fail(
+        400,
+        {
+          error: error.message,
+          code: (error as Error & { code?: string }).code,
+          details: (error as Error & { details?: unknown }).details ?? null,
+        },
+        'validation_error',
+        (error as Error & { code?: string }).code
+      );
+    }
+
+    return await fail(
+      500,
+      {
+        error: 'Error processing file',
+        code: 'processing_failed',
+      },
+      'error',
+      'processing_failed'
     );
   }
-}
-
-function processTimesheet(timesheet: any[]) {
-  // Convert array of objects to DataFrame-like structure
-  let data = timesheet.map(row => ({
-    'First Name': row['First Name'],
-    'Last Name': row['Last Name'],
-    'Total Hours': typeof row['Total Hours'] === 'string' ? parseFloat(row['Total Hours']) : row['Total Hours'],
-    'Base Hours': typeof row['Base Hours'] === 'string' ? parseFloat(row['Base Hours']) : row['Base Hours'],
-    'FerieTime': typeof row['FerieTime'] === 'string' ? parseFloat(row['FerieTime']) : row['FerieTime'],
-    'FeriefridageTime': typeof row['FeriefridageTime'] === 'string' ? parseFloat(row['FeriefridageTime']) : row['FeriefridageTime'],
-    'SygdomTime': typeof row['SygdomTime'] === 'string' ? parseFloat(row['SygdomTime']) : row['SygdomTime']
-  }));
-
-  // Forward fill employee names
-  let currentFirstName = '';
-  let currentLastName = '';
-  data = data.map(row => {
-    if (row['First Name']) currentFirstName = row['First Name'];
-    if (row['Last Name']) currentLastName = row['Last Name'];
-    return {
-      ...row,
-      'First Name': currentFirstName,
-      'Last Name': currentLastName
-    };
-  });
-
-  const employeeData: { [key: string]: any } = {};
-
-  data.forEach(row => {
-    const key = `${row['First Name']}-${row['Last Name']}`;
-    if (!employeeData[key]) {
-      employeeData[key] = {
-        additionalHours: 0,
-        sickHours: 0,
-        vacationHours: 0,
-        vacationDaysHours: 0,
-      };
-    }
-    if (row['Base Hours'] && row['Base Hours'] > 1) {
-      employeeData[key].additionalHours += 0.25;
-    }
-    if (row['SygdomTime'] && row['SygdomTime'] > 1) {
-      employeeData[key].sickHours += row['SygdomTime'];
-    }
-    if (row['FerieTime'] && row['FerieTime'] > 1) {
-      employeeData[key].vacationHours += row['FerieTime'];
-    }
-    if (row['FeriefridageTime'] && row['FeriefridageTime'] > 1) {
-      employeeData[key].vacationDaysHours += row['FeriefridageTime'];
-    }
-  });
-
-
-  // Create final summary
-  const processedData = data
-    .filter(row => (row['Total Hours'] !== undefined && !isNaN(row['Total Hours'])) || row['SygdomTime'] > 0 || row['FerieTime'] > 0 || row['FeriefridageTime'] > 0)
-    .map(row => {
-      const key = `${row['First Name']}-${row['Last Name']}`;
-      const additionalHours = employeeData[key].additionalHours || 0;
-      const sickHours = employeeData[key].sickHours || 0;
-      const vacationHours = employeeData[key].vacationHours || 0;
-      const vacationDaysHours = employeeData[key].vacationDaysHours || 0;
-      const totalHours = row['Total Hours'] ? parseFloat(row['Total Hours']) : 0;
-      return {
-        // 'First Name': row['First Name'],
-        // 'Last Name': row['Last Name'],
-        // 'Total Hours': totalHours,
-        // 'Adjusted Additional Hours': additionalHours,
-        // 'Final Adjusted Total Hours': totalHours + additionalHours
-        'Fornavn': row['First Name'],
-        'Efternavn': row['Last Name'],
-        'Arbejds Timer': totalHours - sickHours - vacationDaysHours,
-        'Sygdom Timer': sickHours,
-        'Ferie Timer': vacationHours,
-        'Feriefridage Timer': vacationDaysHours,
-        'Tilføjede timer (Pause)': additionalHours,
-        'Total Justerede Timer': totalHours + additionalHours - sickHours - vacationDaysHours
-      };
-    });
-
-  return processedData;
 }

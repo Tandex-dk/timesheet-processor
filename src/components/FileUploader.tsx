@@ -35,20 +35,23 @@ const FileUploader = ({ isProcessing, setIsProcessing, setError }: FileUploaderP
       setIsProcessing(true);
       setError(null);
       
-      const response = await fetch('/process', {
+      const response = await fetch('/api/process', {
         method: 'POST',
         body: formData,
       });
 
       if (!response.ok) {
-        throw new Error('Failed to process file');
+        const errorData = await response.json().catch(() => null);
+        throw new Error(errorData?.error || 'Failed to process file');
       }
 
       const blob = await response.blob();
       const url = window.URL.createObjectURL(blob);
       const a = document.createElement('a');
       a.href = url;
-      a.download = 'processed_timesheet.xlsx';
+      const contentDisposition = response.headers.get('Content-Disposition');
+      const fileNameMatch = contentDisposition?.match(/filename="([^"]+)"/);
+      a.download = fileNameMatch?.[1] || 'bookkeeper-summary.xlsx';
       document.body.appendChild(a);
       a.click();
       
