@@ -1,6 +1,7 @@
 'use client';
 
 import { useState } from 'react';
+import Link from 'next/link';
 import { SignedIn, SignedOut, SignInButton, UserButton } from '@clerk/nextjs';
 import FileUploader from '@/components/FileUploader';
 
@@ -33,11 +34,19 @@ export default function Home() {
         <SignedOut>
           <div className="text-center space-y-4">
             <p className="text-gray-700">You must sign in to process timesheets.</p>
-            <SignInButton mode="redirect" forceRedirectUrl="/">
-              <button className="px-4 py-2 bg-blue-600 text-white rounded-md hover:bg-blue-700">
+            <div className="flex items-center justify-center gap-3">
+              <Link
+                href="/login"
+                className="px-4 py-2 bg-blue-600 text-white rounded-md hover:bg-blue-700"
+              >
                 Sign in
-              </button>
-            </SignInButton>
+              </Link>
+              <SignInButton mode="redirect" forceRedirectUrl="/">
+                <button className="px-4 py-2 bg-slate-200 text-slate-800 rounded-md hover:bg-slate-300">
+                  Open Clerk Sign-in
+                </button>
+              </SignInButton>
+            </div>
           </div>
         </SignedOut>
 
