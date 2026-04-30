@@ -24,7 +24,7 @@ const FileUploader = ({ isProcessing, setIsProcessing, setError }: FileUploaderP
 
   const processFile = async (file: File) => {
     if (!file.name.endsWith('.xlsx')) {
-      setError('Please upload an Excel (.xlsx) file');
+      setError('Upload venligst en Excel-fil (.xlsx)');
       return;
     }
 
@@ -42,7 +42,7 @@ const FileUploader = ({ isProcessing, setIsProcessing, setError }: FileUploaderP
 
       if (!response.ok) {
         const errorData = await response.json().catch(() => null);
-        throw new Error(errorData?.error || 'Failed to process file');
+        throw new Error(errorData?.error || 'Behandling af filen mislykkedes');
       }
 
       const blob = await response.blob();
@@ -51,7 +51,7 @@ const FileUploader = ({ isProcessing, setIsProcessing, setError }: FileUploaderP
       a.href = url;
       const contentDisposition = response.headers.get('Content-Disposition');
       const fileNameMatch = contentDisposition?.match(/filename="([^"]+)"/);
-      a.download = fileNameMatch?.[1] || 'bookkeeper-summary.xlsx';
+      a.download = fileNameMatch?.[1] || 'loenoversigt.xlsx';
       document.body.appendChild(a);
       a.click();
       
@@ -62,7 +62,7 @@ const FileUploader = ({ isProcessing, setIsProcessing, setError }: FileUploaderP
         fileInputRef.current.value = '';
       }
     } catch (error) {
-      setError(error instanceof Error ? error.message : 'An error occurred');
+      setError(error instanceof Error ? error.message : 'Der opstod en fejl');
     } finally {
       setIsProcessing(false);
     }
@@ -121,7 +121,9 @@ const FileUploader = ({ isProcessing, setIsProcessing, setError }: FileUploaderP
           </svg>
         </div>
         <span className="text-gray-600">
-          {isProcessing ? 'Processing...' : 'Drop your Excel file here or click to upload'}
+          {isProcessing
+            ? 'Behandler...'
+            : 'Slip din Excel-fil her, eller klik for at uploade'}
         </span>
       </label>
     </div>

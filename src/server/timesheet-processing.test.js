@@ -153,7 +153,7 @@ test('parseWorkbook validates required sheet and columns', () => {
 test('generateOutputFilename uses pay period from uploaded file name', () => {
   assert.equal(
     generateOutputFilename('Timesheet 2026-03-20 - 2026-04-19.xlsx'),
-    'bookkeeper-summary-2026-03-20_to_2026-04-19.xlsx'
+    'loenoversigt-2026-03-20_til_2026-04-19.xlsx'
   );
-  assert.equal(generateOutputFilename('timesheet.xlsx'), 'bookkeeper-summary.xlsx');
+  assert.equal(generateOutputFilename('timesheet.xlsx'), 'loenoversigt.xlsx');
 });

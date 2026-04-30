@@ -50,7 +50,7 @@ export async function POST(request: NextRequest) {
     if (!userId) {
       return await fail(
         401,
-        { error: 'Authentication required', code: 'unauthenticated' },
+        { error: 'Login er påkrævet', code: 'unauthenticated' },
         'unauthorized',
         'unauthenticated'
       );
@@ -70,7 +70,7 @@ export async function POST(request: NextRequest) {
     if (!effectiveRole) {
       return await fail(
         403,
-        { error: 'User is not authorized for payroll processing', code: 'forbidden' },
+        { error: 'Brugeren har ikke adgang til lønbehandling', code: 'forbidden' },
         'unauthorized',
         'forbidden'
       );
@@ -85,7 +85,7 @@ export async function POST(request: NextRequest) {
     if (!rate.allowed) {
       return await fail(
         429,
-        { error: 'Rate limit exceeded', code: 'rate_limited' },
+        { error: 'For mange forespørgsler. Prøv igen senere.', code: 'rate_limited' },
         'rate_limited',
         'rate_limited'
       );
@@ -95,7 +95,7 @@ export async function POST(request: NextRequest) {
     if (!contentType.includes('multipart/form-data')) {
       return await fail(
         415,
-        { error: 'Unsupported content type', code: 'unsupported_media_type' },
+        { error: 'Ikke-understøttet indholdstype', code: 'unsupported_media_type' },
         'validation_error',
         'unsupported_media_type'
       );
@@ -105,7 +105,7 @@ export async function POST(request: NextRequest) {
     if (contentLength > env.MAX_UPLOAD_MB * 1024 * 1024) {
       return await fail(
         413,
-        { error: `File too large. Maximum is ${env.MAX_UPLOAD_MB}MB.`, code: 'payload_too_large' },
+        { error: `Filen er for stor. Maksimum er ${env.MAX_UPLOAD_MB} MB.`, code: 'payload_too_large' },
         'validation_error',
         'payload_too_large'
       );
@@ -117,7 +117,7 @@ export async function POST(request: NextRequest) {
     if (!file) {
       return await fail(
         400,
-        { error: 'No file provided', code: 'missing_file' },
+        { error: 'Ingen fil blev uploadet', code: 'missing_file' },
         'validation_error',
         'missing_file'
       );
@@ -126,7 +126,7 @@ export async function POST(request: NextRequest) {
     if (!file.name.toLowerCase().endsWith('.xlsx')) {
       return await fail(
         400,
-        { error: 'Only .xlsx files are accepted', code: 'invalid_file_type' },
+        { error: 'Kun .xlsx-filer accepteres', code: 'invalid_file_type' },
         'validation_error',
         'invalid_file_type',
         file.name
@@ -136,7 +136,7 @@ export async function POST(request: NextRequest) {
     if (file.size > env.MAX_UPLOAD_MB * 1024 * 1024) {
       return await fail(
         413,
-        { error: `File too large. Maximum is ${env.MAX_UPLOAD_MB}MB.`, code: 'payload_too_large' },
+        { error: `Filen er for stor. Maksimum er ${env.MAX_UPLOAD_MB} MB.`, code: 'payload_too_large' },
         'validation_error',
         'payload_too_large',
         file.name
@@ -147,7 +147,7 @@ export async function POST(request: NextRequest) {
     if (Date.now() - startedAt > env.PROCESS_TIMEOUT_MS) {
       return await fail(
         408,
-        { error: 'Processing timed out before parsing', code: 'timeout' },
+        { error: 'Behandlingen overskred tidsgrænsen før indlæsning', code: 'timeout' },
         'error',
         'timeout',
         file.name
@@ -161,7 +161,7 @@ export async function POST(request: NextRequest) {
     if (Date.now() - startedAt > env.PROCESS_TIMEOUT_MS) {
       return await fail(
         408,
-        { error: 'Processing timed out during aggregation', code: 'timeout' },
+        { error: 'Behandlingen overskred tidsgrænsen under beregningen', code: 'timeout' },
         'error',
         'timeout',
         file.name
@@ -210,7 +210,7 @@ export async function POST(request: NextRequest) {
     return await fail(
       500,
       {
-        error: 'Error processing file',
+        error: 'Der opstod en fejl under behandling af filen',
         code: 'processing_failed',
       },
       'error',

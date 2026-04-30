@@ -18,9 +18,9 @@ export default function Home() {
         </div>
 
         <div>
-          <h1 className="text-3xl font-bold text-center mb-2">Timesheet Processor</h1>
+          <h1 className="text-3xl font-bold text-center mb-2">Timeseddelbehandler</h1>
           <p className="text-gray-600 text-center">
-            Upload your timesheet Excel file to process
+            Upload din Excel-timeseddel for at behandle den
           </p>
         </div>
 
@@ -32,11 +32,11 @@ export default function Home() {
 
         <SignedOut>
           <div className="text-center space-y-4">
-            <p className="text-gray-700">You must sign in to process timesheets.</p>
+            <p className="text-gray-700">Du skal logge ind for at behandle timesedler.</p>
             <div className="flex items-center justify-center">
               <SignInButton mode="redirect" forceRedirectUrl="/">
                 <button className="px-4 py-2 bg-blue-600 text-white rounded-md hover:bg-blue-700">
-                  Sign in
+                  Log ind
                 </button>
               </SignInButton>
             </div>
@@ -51,7 +51,7 @@ export default function Home() {
           />
 
           {isProcessing && (
-            <div className="text-center text-gray-600">Processing your file...</div>
+            <div className="text-center text-gray-600">Behandler din fil...</div>
           )}
         </SignedIn>
       </div>

@@ -37,16 +37,16 @@ const FERIEFRIDAGE_REMARKS = new Set([
 ]);
 
 const OUTPUT_COLUMNS = [
-  'First Name',
-  'Last Name',
-  'Worked Hours',
-  'Break Adjustment',
-  'Sickness Hours',
-  'Vacation Hours',
-  'Feriefridage Hours',
-  'Public Holiday Hours',
-  'Other Absence Hours',
-  'Adjusted Payable Hours',
+  'Fornavn',
+  'Efternavn',
+  'Arbejdstimer',
+  'Pausejustering',
+  'Sygetimer',
+  'Ferietimer',
+  'Feriefridagstimer',
+  'Helligdagstimer',
+  'Øvrige fraværstimer',
+  'Justerede løntimer',
 ];
 
 function parseWorkbook(buffer) {
@@ -56,7 +56,7 @@ function parseWorkbook(buffer) {
   if (!worksheet) {
     throw createValidationError(
       'missing_sheet',
-      'The workbook must contain a "Timesheet" sheet.'
+      'Projektmappen skal indeholde et ark med navnet "Timesheet".'
     );
   }
 
@@ -68,7 +68,7 @@ function parseWorkbook(buffer) {
   if (!rows.length) {
     throw createValidationError(
       'empty_sheet',
-      'The "Timesheet" sheet does not contain any rows.'
+      'Arket "Timesheet" indeholder ingen rækker.'
     );
   }
 
@@ -76,7 +76,7 @@ function parseWorkbook(buffer) {
   if (missingColumns.length) {
     throw createValidationError(
       'missing_columns',
-      `The workbook is missing required columns: ${missingColumns.join(', ')}.`,
+      `Projektmappen mangler obligatoriske kolonner: ${missingColumns.join(', ')}.`,
       { missingColumns }
     );
   }
@@ -239,8 +239,8 @@ function aggregateRows(rows) {
     mappedCategory: row.absenceCategory,
     includedInPayableHours:
       row.workedHours > 0 || row.breakAdjustmentHours > 0 || row.absenceHours > 0
-        ? 'Yes'
-        : 'No',
+        ? 'Ja'
+        : 'Nej',
   }));
 
   return { summary, audit };
@@ -248,23 +248,23 @@ function aggregateRows(rows) {
 
 async function buildWorkbook({ summary, audit, sourceFilename }) {
   const workbook = new ExcelJS.Workbook();
-  workbook.creator = 'Timesheet Processor';
+  workbook.creator = 'Timeseddelbehandler';
   workbook.created = new Date();
 
-  const summarySheet = workbook.addWorksheet('Summary', {
+  const summarySheet = workbook.addWorksheet('Oversigt', {
     views: [{ state: 'frozen', ySplit: 4 }],
   });
-  const auditSheet = workbook.addWorksheet('Audit', {
+  const auditSheet = workbook.addWorksheet('Kontrol', {
     views: [{ state: 'frozen', ySplit: 1 }],
   });
 
   const periodLabel = derivePeriodLabel(sourceFilename);
   summarySheet.mergeCells('A1:J1');
-  summarySheet.getCell('A1').value = `Payroll Summary${periodLabel ? ` (${periodLabel})` : ''}`;
+  summarySheet.getCell('A1').value = `Lønoversigt${periodLabel ? ` (${periodLabel})` : ''}`;
   summarySheet.getCell('A1').font = { bold: true, size: 16 };
   summarySheet.getCell('A2').value =
-    'Break Adjustment rule: add 0.25 hours for each dated row with recorded worked hours and break.';
-  summarySheet.getCell('A3').value = `Source file: ${sourceFilename || 'uploaded workbook'}`;
+    'Regel for pausejustering: Tilføj 0,25 timer for hver dateret række med registrerede arbejdstimer og pause.';
+  summarySheet.getCell('A3').value = `Kildefil: ${sourceFilename || 'uploadet projektmappe'}`;
 
   summarySheet.columns = [
     { key: 'firstName', width: 18 },
@@ -302,18 +302,18 @@ async function buildWorkbook({ summary, audit, sourceFilename }) {
     { key: 'includedInPayableHours', width: 12 },
   ];
   auditSheet.getRow(1).values = [
-    'Source Row',
-    'First Name',
-    'Last Name',
-    'Date',
-    'Worked Hours',
-    'Break Hours',
-    'Break Adjustment',
-    'Absence Hours',
-    'Scheduled Shift',
-    'Raw Remark',
-    'Mapped Category',
-    'Included',
+    'Kilderække',
+    'Fornavn',
+    'Efternavn',
+    'Dato',
+    'Arbejdstimer',
+    'Pausetimer',
+    'Pausejustering',
+    'Fraværstimer',
+    'Planlagt vagt',
+    'Rå bemærkning',
+    'Kategori',
+    'Medregnet',
   ];
   styleHeaderRow(auditSheet.getRow(1));
 
@@ -333,8 +333,8 @@ async function buildWorkbook({ summary, audit, sourceFilename }) {
 function generateOutputFilename(inputFilename) {
   const periodLabel = derivePeriodLabel(inputFilename);
   return periodLabel
-    ? `bookkeeper-summary-${periodLabel.replace(/\s+/g, '_')}.xlsx`
-    : 'bookkeeper-summary.xlsx';
+    ? `loenoversigt-${periodLabel.replace(/\s+/g, '_')}.xlsx`
+    : 'loenoversigt.xlsx';
 }
 
 function derivePeriodLabel(filename = '') {
@@ -343,7 +343,7 @@ function derivePeriodLabel(filename = '') {
     return '';
   }
 
-  return `${match[1]} to ${match[2]}`;
+  return `${match[1]} til ${match[2]}`;
 }
 
 function parseHourValue(value) {
