@@ -3,10 +3,11 @@ import { NextResponse } from 'next/server';
 import { getEnv } from '@/server/env';
 
 export const runtime = 'nodejs';
+export const dynamic = 'force-dynamic';
 
 export async function GET() {
-  const env = getEnv();
   try {
+    const env = getEnv();
     await sql`SELECT 1`;
     return NextResponse.json(
       {
