@@ -58,8 +58,14 @@ export async function POST(request: NextRequest) {
 
     await ensureDatabaseSchema();
     const dbRole = await getAllowedRoleForUser(userId);
-    const claimRole = (sessionClaims?.publicMetadata as { role?: string } | undefined)?.role;
-    const effectiveRole = dbRole || (claimRole === 'admin' || claimRole === 'operator' ? claimRole : null);
+    const metadataRoleRaw =
+      (user?.publicMetadata as { role?: string } | undefined)?.role ??
+      (sessionClaims?.publicMetadata as { role?: string } | undefined)?.role;
+    const metadataRole =
+      metadataRoleRaw === 'admin' || metadataRoleRaw === 'operator'
+        ? metadataRoleRaw
+        : null;
+    const effectiveRole = dbRole || metadataRole;
 
     if (!effectiveRole) {
       return await fail(
