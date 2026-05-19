@@ -16,6 +16,8 @@ const PUBLIC_HOLIDAY_REMARKS = new Set([
   'maundy thursday',
   'good friday',
   'easter monday',
+  'ascension day',
+  'kristi himmelfartsdag',
 ]);
 
 const VACATION_REMARKS = new Set([
@@ -47,6 +49,7 @@ const OUTPUT_COLUMNS = [
   'Helligdagstimer',
   'Øvrige fraværstimer',
   'Justerede løntimer',
+  'Mødebonus berettiget',
 ];
 
 function parseWorkbook(buffer) {
@@ -177,6 +180,7 @@ function aggregateRows(rows) {
         publicHolidayHours: 0,
         otherAbsenceHours: 0,
         adjustedPayableHours: 0,
+        meetingBonusEligible: true,
       });
     }
 
@@ -194,6 +198,13 @@ function aggregateRows(rows) {
       employee.publicHolidayHours += row.absenceHours;
     } else if (row.absenceCategory === 'otherAbsence') {
       employee.otherAbsenceHours += row.absenceHours;
+    }
+
+    if (
+      row.absenceHours > 0 &&
+      (row.absenceCategory === 'sickness' || row.absenceCategory === 'otherAbsence')
+    ) {
+      employee.meetingBonusEligible = false;
     }
   }
 
@@ -213,9 +224,9 @@ function aggregateRows(rows) {
           employee.sicknessHours +
           employee.vacationHours +
           employee.feriefridageHours +
-          employee.publicHolidayHours +
           employee.otherAbsenceHours
       ),
+      meetingBonusEligible: employee.meetingBonusEligible,
     }))
     .sort((a, b) => {
       const lastNameCompare = a.lastName.localeCompare(b.lastName);
@@ -238,7 +249,9 @@ function aggregateRows(rows) {
     rawRemark: row.remark,
     mappedCategory: row.absenceCategory,
     includedInPayableHours:
-      row.workedHours > 0 || row.breakAdjustmentHours > 0 || row.absenceHours > 0
+      row.workedHours > 0 ||
+      row.breakAdjustmentHours > 0 ||
+      (row.absenceHours > 0 && row.absenceCategory !== 'publicHoliday')
         ? 'Ja'
         : 'Nej',
   }));
@@ -259,7 +272,7 @@ async function buildWorkbook({ summary, audit, sourceFilename }) {
   });
 
   const periodLabel = derivePeriodLabel(sourceFilename);
-  summarySheet.mergeCells('A1:J1');
+  summarySheet.mergeCells('A1:K1');
   summarySheet.getCell('A1').value = `Lønoversigt${periodLabel ? ` (${periodLabel})` : ''}`;
   summarySheet.getCell('A1').font = { bold: true, size: 16 };
   summarySheet.getCell('A2').value =
@@ -277,6 +290,7 @@ async function buildWorkbook({ summary, audit, sourceFilename }) {
     { key: 'publicHolidayHours', width: 19 },
     { key: 'otherAbsenceHours', width: 18 },
     { key: 'adjustedPayableHours', width: 18 },
+    { key: 'meetingBonusEligible', width: 22 },
   ];
 
   const summaryHeaderRow = summarySheet.getRow(4);
@@ -284,7 +298,10 @@ async function buildWorkbook({ summary, audit, sourceFilename }) {
   styleHeaderRow(summaryHeaderRow);
 
   for (const employee of summary) {
-    summarySheet.addRow(employee);
+    summarySheet.addRow({
+      ...employee,
+      meetingBonusEligible: employee.meetingBonusEligible ? 'Ja' : 'Nej',
+    });
   }
 
   auditSheet.columns = [
@@ -363,14 +380,6 @@ function parseHourValue(value) {
   if (/^\d+:\d{2}$/.test(cleaned)) {
     const [hours, minutes] = cleaned.split(':').map(Number);
     return roundHours(hours + minutes / 60);
-  }
-
-  if (/^\d+\.\d{2}$/.test(cleaned)) {
-    const [hoursPart, minutesPart] = cleaned.split('.');
-    const minutes = Number(minutesPart);
-    if (minutes < 60) {
-      return roundHours(Number(hoursPart) + minutes / 60);
-    }
   }
 
   const numeric = Number(cleaned);
