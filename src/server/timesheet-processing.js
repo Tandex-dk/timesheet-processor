@@ -18,6 +18,14 @@ const PUBLIC_HOLIDAY_REMARKS = new Set([
   'easter monday',
   'ascension day',
   'kristi himmelfartsdag',
+  'helligdag',
+  'helligdage',
+  'whit monday',
+  'whitsun monday',
+  'pentecost monday',
+  '2nd pentecost day',
+  'christmas day',
+  '2nd christmas day',
 ]);
 
 const VACATION_REMARKS = new Set([
