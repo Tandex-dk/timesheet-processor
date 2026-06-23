@@ -70,6 +70,10 @@ test('mapAbsenceCategory maps feriefridage, public holidays, and unknown remarks
   assert.equal(mapAbsenceCategory('Feriefridage', 8), 'feriefridage');
   assert.equal(mapAbsenceCategory('Maundy Thursday', 7.67), 'publicHoliday');
   assert.equal(mapAbsenceCategory('Ascension Day', 7.4), 'publicHoliday');
+  assert.equal(mapAbsenceCategory('Helligdag', 7.4), 'publicHoliday');
+  assert.equal(mapAbsenceCategory('Whit Monday', 7.4), 'publicHoliday');
+  assert.equal(mapAbsenceCategory('Christmas Day', 7.4), 'publicHoliday');
+  assert.equal(mapAbsenceCategory('2nd Christmas Day', 7.4), 'publicHoliday');
   assert.equal(mapAbsenceCategory('Sygdom', 4), 'sickness');
   assert.equal(mapAbsenceCategory('Something New', 2), 'otherAbsence');
   assert.equal(mapAbsenceCategory('', 0), 'none');
@@ -107,6 +111,16 @@ test('aggregateRows reconciles worked time, absence buckets, and break adjustmen
       Remarks: 'Feriefridage',
       'Scheduled Shift': '8.00',
     },
+    {
+      'First Name': 'Elena',
+      'Last Name': 'Nichita',
+      Date: '05-06-2026',
+      'Worked Hours': '0.00',
+      Break: '0.00',
+      Absence: '8.00',
+      Remarks: 'Helligdag',
+      'Scheduled Shift': '8.00',
+    },
   ]);
 
   const { summary, audit } = aggregateRows(rows);
@@ -120,15 +134,16 @@ test('aggregateRows reconciles worked time, absence buckets, and break adjustmen
     sicknessHours: 0,
     vacationHours: 0,
     feriefridageHours: 8,
-    publicHolidayHours: 8,
+    publicHolidayHours: 16,
     otherAbsenceHours: 0,
     adjustedPayableHours: 16.25,
     meetingBonusEligible: true,
   });
-  assert.equal(audit.length, 3);
+  assert.equal(audit.length, 4);
   assert.equal(audit[1].mappedCategory, 'publicHoliday');
   assert.equal(audit[1].includedInPayableHours, 'Nej');
   assert.equal(audit[2].mappedCategory, 'feriefridage');
+  assert.equal(audit[3].mappedCategory, 'publicHoliday');
 });
 
 test('aggregateRows marks meeting bonus as not eligible for sickness and other absence', () => {
