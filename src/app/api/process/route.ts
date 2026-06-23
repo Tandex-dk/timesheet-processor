@@ -1,30 +1,21 @@
 import { NextRequest } from 'next/server';
 import { read, utils, write } from 'xlsx';
-import { IncomingForm } from 'formidable';
-import { promises as fs } from 'fs';
 
 export const dynamic = 'force-dynamic';
 
 export async function POST(req: NextRequest) {
   try {
-    const form = new IncomingForm({ uploadDir: '/tmp', keepExtensions: true });
-    const data = await new Promise<{ fields: any; files: any }>((resolve, reject) => {
-      form.parse(req.body as any, (err, fields, files) => {
-        if (err) reject(err);
-        else resolve({ fields, files });
-      });
-    });
+    const formData = await req.formData();
+    const file = formData.get('file');
 
-    const file = data.files.file?.[0] || data.files.file;
-
-    if (!file || !file.filepath) {
+    if (!(file instanceof File)) {
       return new Response(JSON.stringify({ error: 'No file uploaded' }), {
         status: 400,
         headers: { 'Content-Type': 'application/json' },
       });
     }
 
-    const buffer = await fs.readFile(file.filepath);
+    const buffer = Buffer.from(await file.arrayBuffer());
     const workbook = read(buffer);
     const worksheet = workbook.Sheets[workbook.SheetNames[0]];
     const timesheet = utils.sheet_to_json(worksheet);
@@ -130,12 +121,6 @@ export async function POST(req: NextRequest) {
     }
 
     const outputBuffer = write(newWb, { bookType: 'xlsx', type: 'buffer' });
-
-    try {
-      await fs.unlink(file.filepath);
-    } catch {
-      // Best-effort cleanup only.
-    }
 
     return new Response(outputBuffer, {
       status: 200,
